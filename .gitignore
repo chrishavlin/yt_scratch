@@ -141,3 +141,6 @@ cython_debug/
 # datafiles 
 *.json
 
+notebooks/dask-worker-space/*
+*.png
+*.gif
