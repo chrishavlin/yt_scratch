@@ -1,0 +1,14 @@
+{
+    "$schema": "https://raw.githubusercontent.com/data-exp-lab/yt-napari/main/src/yt_napari/schemas/yt-napari_0.0.1.json",
+    "dataset": "amrvac/bw_3d0000.dat",
+    "take_log": true,
+    "field_type": "amrvac",
+    "field_name": "b1",
+    "right_edge": [
+        2.0,
+        2.0,
+        2.0
+    ],
+    "edge_units": "code_length",
+    "resolution": [300, 300, 300]
+}

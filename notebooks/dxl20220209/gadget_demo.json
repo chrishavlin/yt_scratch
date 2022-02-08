@@ -1,0 +1,13 @@
+{"$schema": "https://raw.githubusercontent.com/data-exp-lab/yt-napari/main/src/yt_napari/schemas/yt-napari_0.0.1.json",
+  "dataset": "snapshot_033",
+  "field_type": "PartType0",
+  "field_name": "density",
+  "left_edge": [0.0, 0.0, 0.0],
+  "right_edge": [
+    24.0,
+    24.0,
+    24.0
+  ],
+  "edge_units": "Mpc",
+  "resolution": [100, 100, 100],
+  "take_log": true}
