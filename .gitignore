@@ -140,7 +140,13 @@ cython_debug/
 
 # datafiles 
 *.json
+*.h5
+*.html
 
 notebooks/dask-worker-space/*
 *.png
 *.gif
+
+.idea/*
+
+
