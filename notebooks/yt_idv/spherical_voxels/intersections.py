@@ -181,7 +181,8 @@ def find_all_intersections(v_model_spherical: np.ndarray,
         interxs_sp = []
         hits = []
         for tval in interx:
-            interxyz = p0 + ray_dir * tval
+            # interxyz = p0 + ray_dir * tval #NOOOOOOOOOOOOOOOOO
+            interxyz = ray_position_xyz + ray_dir * tval #NOOOOOOOOOOOOOOOOO
             interx_sp = transform_to_spherical(interxyz, voxel)
             interxs.append(interxyz)
             interxs_sp.append(interx_sp)
