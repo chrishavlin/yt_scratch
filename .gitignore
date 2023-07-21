@@ -150,3 +150,17 @@ notebooks/dask-worker-space/*
 .idea/*
 
 
+
+*.hdf5
+*.h5 
+*.ewah
+imgui.ini
+*.swp
+*.dot
+*.idea
+
+**__pychache__**
+*.stats
+*.summary
+*.timeit
+results/
