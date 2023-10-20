@@ -164,3 +164,5 @@ imgui.ini
 *.summary
 *.timeit
 results/
+
+.DS_Store
