@@ -25,11 +25,12 @@ def _get_bin_ids(n_dim, positions, position_bins, resolution):
     bins_ids = []
 
     for idim in range(n_dim):
-        bins_i = np.digitize(positions[:,idim], position_bins[idim])         
+        bins_i = np.digitize(positions[:,idim], position_bins[idim])            
+        bins_i = bins_i - 1 
         bins_i = np.clip(bins_i, 0, resolution[idim]-1)
         bins_ids.append(bins_i)
                     
-
+    
     bins_ids = np.column_stack(bins_ids)
     return bins_ids
 
@@ -137,8 +138,7 @@ class MoldSimulation:
             self.deposits[bin_ids[:,0], bin_ids[:,1], bin_ids[:,2]]  += self.deposition_factor
 
     def _decay(self):
-        # diffusion         
-
+        # diffusion
         dxyz = self.dxyz
         res = self.resolution
         k = self.diffusivity
@@ -214,7 +214,7 @@ class MoldSimulation:
         self.positions = _apply_periodic_bounds(self.positions, self.left_edge, self.right_edge)
         
         # register traces
-        bin_ids = _get_bin_ids(self.n_dim, self.positions, self.position_bins, self.resolution)
+        bin_ids = _get_bin_ids(self.n_dim, self.positions, self.position_bins, self.resolution)        
         self._register_positions_in_trace(bin_ids=bin_ids)
 
         # deposit at current position
