@@ -1,7 +1,6 @@
 import numpy as np 
 import numpy.typing as npt
-import numba
-
+from .numba_operators import diffusion_operator_2d, diffusion_operator_3d, _find_local_max_2d, _find_local_max_3d
 
 def _initial_particle_positions(n_particles: int, n_dim: int, left_edge: npt.NDArray, right_edge: npt.NDArray) -> npt.NDArray:
     pos = []
@@ -35,96 +34,6 @@ def _get_bin_ids(n_dim, positions, position_bins, resolution):
     return bins_ids
 
 
-@numba.njit
-def _find_local_max(positions: npt.NDArray, 
-                    bin_ids: npt.NDArray, 
-                    bin_positions: npt.NDArray,
-                    sense_bins: npt.NDArray,                     
-                    deposits:npt.NDArray, 
-                    ):
-
-    n_particles = positions.shape[0]
-
-    nx = deposits.shape[1]
-    ny = deposits.shape[0] 
-
-    local_max = np.zeros(positions.shape)
-
-    
-    for i_particle in range(n_particles):
-        
-        bin0 = bin_ids[i_particle, 0] # bin number in x, y, z
-        bin1 = bin_ids[i_particle, 1] # bin number in x, y, z
-
-        max_val = -100.
-        max_pos = [0., 0.]
-        for i0 in range(sense_bins[0][0], sense_bins[0,1]):
-            for i1 in range(sense_bins[1][0], sense_bins[1,1]):
-
-                ix = bin0 + i0 
-                if ix < 0:
-                    ix = nx - 1 
-                if ix >= nx:
-                    ix = 0 
-
-                iy = bin1 + i1
-                if iy < 0:
-                    iy = ny - 1 
-                if iy >= ny:
-                    iy = 0 
-
-                val = deposits[iy, ix]
-                if val > max_val:
-                    max_val = val 
-                    max_pos = [bin_positions[0][ix], bin_positions[0][iy]] 
-
-        local_max[i_particle, 0] = max_pos[0]
-        local_max[i_particle, 1] = max_pos[1]
-                
-    return local_max
-
-
-def _get_particle_directions(positions, 
-                             deposits, 
-                             position_bins, 
-                             bin_ids, 
-                             sense_bins,
-                             directions=None, 
-                             bias = 0.8):    
-    resolution = deposits.shape
-    ndim = len(resolution)
-
-    if directions is None: 
-        directions = np.random.random(positions.shape)
-        dir_mag = np.linalg.norm(directions,axis=1)
-        for idim in range(ndim):
-            directions[:,idim] = directions[:,idim] / dir_mag        
-
-    # global max location                      
-    max_loc = _find_local_max(positions, bin_ids, position_bins, sense_bins, deposits)
-
-    # find new direction
-    new_direction = positions - max_loc    
-    dir_mag = np.linalg.norm(new_direction,axis=1)
-    for idim in range(ndim):
-        new_direction[:,idim] = new_direction[:,idim] / dir_mag  
-
-    # the bias will depend on where its initially headed 
-    # if new_direction = direction, bias is max bias
-    bias = bias * (1. - np.linalg.norm(new_direction - directions, axis=1)) 
-    
-    bias_m1 = 1 - bias
-    for idim in range(ndim):
-        directions[:, idim] =  bias * new_direction[:,idim] + bias_m1 * directions[:,idim]
-       
-    # make sure we have unit vector still     
-    dir_mag = np.linalg.norm(directions,axis=1)
-    for idim in range(ndim):
-        directions[:,idim] = directions[:,idim] / dir_mag        
-
-    return directions
-
-
 def _apply_periodic_bounds(positions, left_edge, right_edge):
     ndim = len(left_edge)
     for idim in range(ndim):
@@ -134,81 +43,15 @@ def _apply_periodic_bounds(positions, left_edge, right_edge):
         mask = positions[:,idim] < left_edge[idim]
         positions[:, idim][mask] = positions[:, idim][mask] + wid
     return positions
+              
 
+def _check_dimensionality(values):
+    dims = [len(value) for value in values]
+    if len(set(dims)) != 1:
+        msg = "resolution, left_edge, right_edge and sense_dist must all have the same "
+        msg += "dimensionality, but they did not."
+        raise ValueError(msg)
     
-@numba.njit
-def diffusion_operator_2d(f: npt.NDArray, nx: int, ny: int, dx: float, dy: float) -> npt.NDArray:
-
-    dfdt = np.zeros(f.shape)
-    dx2 = dx * dx
-    dy2 = dy * dy
-    
-    # interior
-    for ix in range(1, nx-1):
-        for iy in range(1, ny-1):
-            dfdt[iy, ix] = (f[iy, ix+1] + f[iy, ix-1] - 2. * f[iy, ix]) / dx2
-            dfdt[iy, ix] = dfdt[iy, ix] + (f[iy+1, ix] + f[iy-1, ix] - 2. * f[iy, ix]) / dy2
-
-        # top/bottom
-        iy = 0
-        dfdt[iy, ix] = (f[iy, ix+1] + f[iy, ix-1] - 2. * f[iy, ix]) / dx2
-        dfdt[iy, ix] = dfdt[iy, ix] + (f[iy+1, ix] + f[ny-1, ix] - 2. * f[iy, ix]) / dy2
-
-        iy = ny-1
-        dfdt[iy, ix] = (f[iy, ix+1] + f[iy, ix-1] - 2. * f[iy, ix]) / dx2
-        dfdt[iy, ix] = dfdt[iy, ix] + (f[0, ix] + f[iy-1,ix] - 2. * f[iy, ix]) / dy2
-
-    
-    # left/right
-    for iy in range(1, ny-1):
-        ix = 0
-        dfdt[iy, ix] = (f[iy, ix+1] + f[iy, nx-1] - 2. * f[iy, ix]) / dx2
-        dfdt[iy, ix] = dfdt[iy, ix] + (f[iy+1, ix] + f[iy-1, ix] - 2. * f[iy, ix]) / dy2
-
-        ix = nx - 1
-        dfdt[iy, ix] = (f[iy, 0] + f[iy, ix-1] - 2. * f[iy, ix]) / dx2
-        dfdt[iy, ix] = dfdt[iy, ix] + (f[iy+1, ix] + f[iy-1, ix] - 2. * f[iy, ix]) / dy2
-
-
-    # corners 
-    ix = 0 
-    iy = 0
-    dfdt[iy, ix] = (f[iy, ix+1] + f[iy, nx-1] - 2. * f[iy, ix]) / dx2
-    dfdt[iy, ix] = dfdt[iy, ix] + (f[iy+1, ix] + f[ny-1, ix] - 2. * f[iy, ix]) / dy2
-
-    ix = 0 
-    iy = ny - 1
-    dfdt[iy, ix] = (f[iy, ix+1] + f[iy, nx-1] - 2. * f[iy, ix]) / dx2
-    dfdt[iy, ix] = dfdt[iy, ix] + (f[0, ix] + f[iy-1,ix] - 2. * f[iy, ix]) / dy2
-
-    ix = nx - 1 
-    iy = 0 
-    dfdt[iy, ix] = (f[iy, 0] + f[iy, ix-1] - 2. * f[iy, ix]) / dx2
-    dfdt[iy, ix] = dfdt[iy, ix] + (f[iy+1, ix] + f[ny-1, ix] - 2. * f[iy, ix]) / dy2
-
-    ix = nx - 1 
-    iy = ny - 1 
-    dfdt[iy, ix] = (f[iy, 0] + f[iy, ix-1] - 2. * f[iy, ix]) / dx2
-    dfdt[iy, ix] = dfdt[iy, ix] + (f[0, ix] + f[iy-1,ix] - 2. * f[iy, ix]) / dy2
-
-    return dfdt
-
-
-@numba.njit
-def diffusion_operator_3d(f: npt.NDArray, nx: int, ny: int, dx: float, dy: float) -> npt.NDArray:
-
-    dfdt = np.zeros(f.shape)
-    dx2 = dx * dx
-    dy2 = dy * dy
-    
-    for ix in range(1, nx-1):
-        dfdt[ix, iy] = (f[ix+1, iy] + f[ix-1, iy] - 2. * f[ix, iy]) / dx2
-        for iy in range(1, ny-1):
-            dfdt[ix, iy] = dfdt[ix, iy] + (f[ix, iy+1] + f[ix, iy-1] - 2. * f[ix, iy]) / dy2
-
-    return dfdt
-
-            
 
 class MoldSimulation:
     def __init__(self, 
@@ -219,14 +62,25 @@ class MoldSimulation:
                  n_particles = 100, 
                  deposition_factor = 0.1,
                  diffusivity = 1.0,
+                 direction_bias = 0.8, 
+                 viewing_angle_degs = 45,
+                 direction_flip_likelihood = 0.02,          
                  init_deposit = None):
+        
+        _check_dimensionality([resolution, left_edge, right_edge, sense_dist])
+        self.n_dim = len(resolution) 
         self.resolution = resolution
         self.deposition_factor = deposition_factor
         self.diffusivity = diffusivity
-        self.n_dim = len(resolution)        
+        self.viewing_angle_degs = viewing_angle_degs
+        self.direction_bias = direction_bias
+        self.direction_flip_likelihood = direction_flip_likelihood
+                        
         self.traces = np.zeros(resolution, dtype=float)
         self.trace_i = np.zeros(resolution, dtype=float)
-
+        self.time = 0.0
+        self.timesteps = 0        
+        
         if init_deposit is None:
             self.deposits = np.random.random(resolution)
         else:
@@ -250,15 +104,18 @@ class MoldSimulation:
         bin_ids = _get_bin_ids(self.n_dim, self.positions, self.position_bins, self.resolution)
         self._register_positions_in_trace(bin_ids=bin_ids)
 
-
+        # the sensing distnce for a particle
         self.sense_dist = np.asarray(sense_dist)
         sense_bins = (np.ceil(self.sense_dist / self.dxyz) / 2 ).astype(int)        
         sense_bins_by_dim = []
         for idim in range(self.n_dim):
             sense_bins_by_dim.append([-sense_bins[idim], sense_bins[idim]])
         self.sense_bins = np.array(sense_bins_by_dim, dtype=int)
-        
-        self.particle_direction = _get_particle_directions(self.positions, self.deposits, self.position_bins, self.sense_bins, bin_ids, directions=None)
+                
+        # initialize particle direction
+        self.particle_direction = self._get_particle_directions(                                                            
+                                                           bin_ids,                                                            
+                                                           directions=None)
         
 
     def _register_positions_in_trace(self, bin_ids=None):
@@ -282,18 +139,74 @@ class MoldSimulation:
     def _decay(self):
         # diffusion         
 
-        if self.n_dim == 2: 
-            dxy = [(self.right_edge[idim] - self.left_edge[idim])/self.resolution[idim] for idim in range(2)]
-            res = self.resolution
-            dDdt = diffusion_operator_2d(self.deposits, res[0], res[1], dxy[0], dxy[1])
-        else:
-            raise NotImplementedError()
-        
+        dxyz = self.dxyz
+        res = self.resolution
         k = self.diffusivity
-        dt = np.min(dxy) ** 2 / (2. * k) * 0.5        
+        if self.n_dim == 2:                         
+            dDdt = diffusion_operator_2d(self.deposits, res[0], res[1], dxyz[0], dxyz[1])
+            dt = np.min(dxyz) ** 2 / (2. * k) * 0.5 
+        else:
+            dDdt = diffusion_operator_3d(self.deposits, res[0], res[1], res[2], dxyz[0], dxyz[1], dxyz[2])
+            dt = np.min(dxyz) ** 2 / (2. * k) * 0.25
+                
+        self.time += dt        
         self.deposits = self.deposits + dDdt * k * dt
 
         
+    def _get_particle_directions(self,                                  
+                                bin_ids,                              
+                                directions=None,                              
+                             ):    
+    
+        
+
+        bias = self.direction_bias
+        viewing_angle_rads = self.viewing_angle_degs * np.pi / 180.
+
+        if directions is None: 
+            directions = np.random.random(self.positions.shape)
+            dir_mag = np.linalg.norm(directions,axis=1)
+            for idim in range(self.n_dim):
+                directions[:,idim] = directions[:,idim] / dir_mag
+
+        # local max location within viewing angle        
+        if self.n_dim == 2:
+            max_loc = _find_local_max_2d(self.positions, 
+                                    directions, 
+                                    bin_ids, 
+                                    self.position_bins, 
+                                     self.sense_bins, 
+                                    self.deposits, 
+                                    viewing_angle_rads)
+        else:        
+            max_loc = _find_local_max_3d(self.positions, 
+                                    directions, 
+                                    bin_ids, 
+                                    self.position_bins, 
+                                     self.sense_bins, 
+                                    self.deposits, 
+                                    viewing_angle_rads)
+            
+        # find new direction
+        new_direction = (max_loc - self.positions)
+        dir_mag = np.linalg.norm(new_direction,axis=1)
+        for idim in range(self.n_dim):
+            new_direction[:,idim] = new_direction[:,idim] / dir_mag      
+
+        
+        bias_m1 = 1 - bias
+        directions =  bias * new_direction + bias_m1 * directions
+                
+        # make sure we have unit vector still and apply a random flip        
+        dir_mag = np.linalg.norm(directions,axis=1)
+        flip_frac = 1. - self.direction_flip_likelihood
+        for idim in range(self.n_dim):
+            directions[:,idim] = directions[:,idim] / dir_mag
+            rand_flip = np.random.random((directions.shape[0],)) > flip_frac
+            directions[rand_flip,idim] = -1 * directions[rand_flip, idim]
+        
+        return directions
+
     def step(self):
         
         # move forward with current direction 
@@ -311,9 +224,12 @@ class MoldSimulation:
         self._decay()
 
         # update direction for next time        
-        self.particle_direction = _get_particle_directions(self.positions, self.deposits, self.position_bins,  self.sense_bins, bin_ids, directions=self.particle_direction)
+        self.particle_direction = self._get_particle_directions(                                                            
+                                                           bin_ids,                                                            
+                                                           directions=self.particle_direction)
     
-
+        self.timesteps += 1
+        
 
 
         
